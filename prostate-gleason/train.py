@@ -9,6 +9,7 @@ from time import time
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
+import torch.nn as nn
 import torch.optim as optim
 
 from config import (BATCH_SIZE, CLASS_COUNTS, CLASS_NAMES, DATA_ROOT, DEVICE,
@@ -17,6 +18,8 @@ from config import (BATCH_SIZE, CLASS_COUNTS, CLASS_NAMES, DATA_ROOT, DEVICE,
                     NUM_WORKERS, PIN_MEMORY, PREFETCH_FACTOR, PRETRAINED,
                     RANDOM_SEED, TRAIN_SPLIT, USE_WEIGHTED_SAMPLING,
                     VALID_LABELS, WEIGHT_DECAY, WEIGHTING_STRATEGY,
+                    EARLY_STOPPING, EARLY_STOPPING_PATIENCE,
+                    EARLY_STOPPING_MIN_DELTA, EARLY_STOPPING_METRIC,
                     get_class_weights, print_weight_info)
 from data import get_loaders
 from eval import evaluate
@@ -118,6 +121,54 @@ def plot_confusion_matrix(cm, class_names):
     plt.title("Confusion Matrix - Prostate Gleason Grading")
     plt.savefig("confusion_matrix.png", dpi=300, bbox_inches="tight")
     plt.close()
+
+
+class EarlyStopping:
+    """
+    Early stopping to halt training when validation metric stops improving.
+    
+    Args:
+        patience: Number of epochs to wait for improvement
+        min_delta: Minimum change to qualify as an improvement
+        mode: 'max' for metrics like accuracy/f1, 'min' for loss
+    """
+    
+    def __init__(self, patience=5, min_delta=0.0001, mode='max'):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.mode = mode
+        self.counter = 0
+        self.best_value = None
+        self.should_stop = False
+    
+    def __call__(self, current_value):
+        """
+        Check if training should stop.
+        
+        Args:
+            current_value: Current metric value
+            
+        Returns:
+            True if this is a new best, False otherwise
+        """
+        if self.best_value is None:
+            self.best_value = current_value
+            return True
+        
+        if self.mode == 'max':
+            improved = current_value > self.best_value + self.min_delta
+        else:  # mode == 'min'
+            improved = current_value < self.best_value - self.min_delta
+        
+        if improved:
+            self.best_value = current_value
+            self.counter = 0
+            return True
+        else:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.should_stop = True
+            return False
 
 
 def main():
@@ -235,6 +286,19 @@ def main():
         print("TRAINING")
         print("=" * 70)
 
+        # Early stopping setup
+        if EARLY_STOPPING:
+            mode = 'min' if EARLY_STOPPING_METRIC == 'loss' else 'max'
+            early_stopper = EarlyStopping(
+                patience=EARLY_STOPPING_PATIENCE,
+                min_delta=EARLY_STOPPING_MIN_DELTA,
+                mode=mode
+            )
+            print(f"\nEarly Stopping: enabled")
+            print(f"  Patience: {EARLY_STOPPING_PATIENCE} epochs")
+            print(f"  Min delta: {EARLY_STOPPING_MIN_DELTA}")
+            print(f"  Monitoring: {EARLY_STOPPING_METRIC}")
+
         start_time = time()
         best_test_acc = 0.0
         best_f1 = 0.0
@@ -264,20 +328,45 @@ def main():
             print(f"test_acc={acc:.4f} | precision={prec:.4f} | recall={rec:.4f} | f1={f1:.4f}")
             print(f"Epoch Time: {epoch_time:.1f}s")
 
-            # Save best model (can use F1 or accuracy)
-            # Using accuracy for consistency with original, but F1 may be better
-            # for imbalanced data
-            if acc > best_test_acc:
-                best_test_acc = acc
-                best_f1 = f1
-                torch.save(model.state_dict(), "best_model.pth")
-                print("New best model (by test accuracy)")
+            # Determine metric for early stopping and model saving
+            if EARLY_STOPPING_METRIC == "f1":
+                current_metric = f1
+            elif EARLY_STOPPING_METRIC == "loss":
+                current_metric = train_loss
+            else:  # accuracy
+                current_metric = acc
+
+            # Early stopping check
+            if EARLY_STOPPING:
+                is_best = early_stopper(current_metric)
+                
+                if is_best:
+                    best_test_acc = acc
+                    best_f1 = f1
+                    torch.save(model.state_dict(), "best_model.pth")
+                    print(f"New best model ({EARLY_STOPPING_METRIC}={current_metric:.4f})")
+                else:
+                    epochs_left = EARLY_STOPPING_PATIENCE - early_stopper.counter
+                    print(f"No improvement... (patience: {epochs_left}/{EARLY_STOPPING_PATIENCE})")
+                
+                if early_stopper.should_stop:
+                    print(f"\nEarly stopping triggered at epoch {epoch + 1}")
+                    break
             else:
-                print("No improvement...")
+                # Original behavior without early stopping
+                if acc > best_test_acc:
+                    best_test_acc = acc
+                    best_f1 = f1
+                    torch.save(model.state_dict(), "best_model.pth")
+                    print("New best model (by test accuracy)")
+                else:
+                    print("No improvement...")
 
         total_time = time() - start_time
+        epochs_completed = epoch + 1
 
         print(f"\nTotal Training Time: {total_time:.1f} seconds ({total_time/60:.1f} minutes)")
+        print(f"Epochs completed: {epochs_completed}/{NUM_EPOCHS}")
         print(f"Best test accuracy: {best_test_acc:.4f}")
         print(f"Best F1 score: {best_f1:.4f}")
 

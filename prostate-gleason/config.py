@@ -71,6 +71,22 @@ MANUAL_WEIGHTS = None
 # If True, oversamples minority classes during training
 USE_WEIGHTED_SAMPLING = False
 
+# ============================================================================
+# EARLY STOPPING CONFIGURATION
+# ============================================================================
+
+# Enable/disable early stopping
+EARLY_STOPPING = True
+
+# Number of epochs with no improvement before stopping
+EARLY_STOPPING_PATIENCE = 5
+
+# Minimum improvement to qualify as "improvement"
+EARLY_STOPPING_MIN_DELTA = 0.0001
+
+# Metric to monitor: "accuracy", "f1", "loss"
+EARLY_STOPPING_METRIC = "f1"
+
 
 def compute_class_weights(strategy, class_counts, beta=0.999):
     """
