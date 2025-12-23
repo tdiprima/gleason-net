@@ -180,7 +180,7 @@ def get_loaders(data_root, batch_size, input_size, valid_labels, label_map,
     train_size = int(train_split * len(full_dataset))
     val_size = len(full_dataset) - train_size
 
-    train_dataset, _ = random_split(
+    train_dataset, val_dataset_temp = random_split(
         full_dataset,
         [train_size, val_size],
         generator=torch.Generator().manual_seed(random_seed)
@@ -194,8 +194,8 @@ def get_loaders(data_root, batch_size, input_size, valid_labels, label_map,
         label_map=label_map,
     )
 
-    # Get the same indices for validation
-    val_indices = list(range(train_size, len(full_dataset)))
+    # Get the actual random indices from the split (not sequential!)
+    val_indices = val_dataset_temp.indices
     val_dataset_proper = torch.utils.data.Subset(val_dataset_proper, val_indices)
 
     print("\nDataset Split:")
