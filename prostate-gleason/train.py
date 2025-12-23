@@ -1,6 +1,7 @@
 """
 Main training script for Prostate Cancer Gleason Grading
 """
+import sys
 import warnings
 from time import time
 
@@ -110,141 +111,153 @@ def plot_confusion_matrix(cm, class_names):
 
 def main():
     """Main training function."""
-    # Device setup
-    device = torch.device(DEVICE if torch.cuda.is_available() else "cpu")
-    print_system_info(device)
+    # Redirect stdout to file
+    log_file = open("training_log.txt", "w")
+    original_stdout = sys.stdout
+    sys.stdout = log_file
 
-    # Set random seed for reproducibility
-    torch.manual_seed(RANDOM_SEED)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(RANDOM_SEED)
+    try:
+        # Device setup
+        device = torch.device(DEVICE if torch.cuda.is_available() else "cpu")
+        print_system_info(device)
 
-    # Print configuration
-    print("\nConfiguration:")
-    print(f"  Data Root: {DATA_ROOT}")
-    print(f"  Number of Classes: {NUM_CLASSES}")
-    print(f"  Input Size: {INPUT_SIZE}x{INPUT_SIZE}")
-    print(f"  Batch Size: {BATCH_SIZE}")
-    print(f"  Learning Rate: {LEARNING_RATE}")
-    print(f"  Weight Decay: {WEIGHT_DECAY}")
-    print(f"  Epochs: {NUM_EPOCHS}")
-    print(f"  Workers: {NUM_WORKERS}")
-    print(f"  Pin Memory: {PIN_MEMORY}")
-    print(f"  Pretrained: {PRETRAINED}")
-    print(f"  Valid Labels: {VALID_LABELS}")
+        # Set random seed for reproducibility
+        torch.manual_seed(RANDOM_SEED)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(RANDOM_SEED)
 
-    # Load data
-    print("\n" + "=" * 70)
-    print("LOADING DATASET")
-    print("=" * 70)
+        # Print configuration
+        print("\nConfiguration:")
+        print(f"  Data Root: {DATA_ROOT}")
+        print(f"  Number of Classes: {NUM_CLASSES}")
+        print(f"  Input Size: {INPUT_SIZE}x{INPUT_SIZE}")
+        print(f"  Batch Size: {BATCH_SIZE}")
+        print(f"  Learning Rate: {LEARNING_RATE}")
+        print(f"  Weight Decay: {WEIGHT_DECAY}")
+        print(f"  Epochs: {NUM_EPOCHS}")
+        print(f"  Workers: {NUM_WORKERS}")
+        print(f"  Pin Memory: {PIN_MEMORY}")
+        print(f"  Pretrained: {PRETRAINED}")
+        print(f"  Valid Labels: {VALID_LABELS}")
 
-    train_loader, val_loader = get_loaders(
-        DATA_ROOT, BATCH_SIZE, INPUT_SIZE, VALID_LABELS, LABEL_MAP,
-        TRAIN_SPLIT, RANDOM_SEED, NUM_WORKERS, PIN_MEMORY, PREFETCH_FACTOR
-    )
+        # Load data
+        print("\n" + "=" * 70)
+        print("LOADING DATASET")
+        print("=" * 70)
 
-    if train_loader is None or val_loader is None:
-        print("Failed to load dataset. Exiting.")
-        return
-
-    # Initialize model
-    print("\n" + "=" * 70)
-    print("INITIALIZING MODEL")
-    print("=" * 70)
-
-    model = create_model(num_classes=NUM_CLASSES, pretrained=PRETRAINED)
-    model = model.to(device)
-
-    # Print model summary
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total Parameters: {total_params:,}")
-    print(f"Trainable Parameters: {trainable_params:,}")
-
-    # Loss function
-    criterion = nn.CrossEntropyLoss()
-
-    # Optimizer
-    optimizer = optim.AdamW(
-        model.parameters(),
-        lr=LEARNING_RATE,
-        weight_decay=WEIGHT_DECAY
-    )
-
-    # Learning rate scheduler
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        optimizer,
-        T_max=NUM_EPOCHS,
-        eta_min=LEARNING_RATE * 0.01
-    )
-
-    # Training loop
-    print("\n" + "=" * 70)
-    print("TRAINING")
-    print("=" * 70)
-
-    start_time = time()
-    best_test_acc = 0.0
-
-    for epoch in range(NUM_EPOCHS):
-        epoch_start = time()
-        current_lr = optimizer.param_groups[0]['lr']
-
-        print(f"\nEpoch {epoch + 1}/{NUM_EPOCHS} (LR: {current_lr:.6f})")
-        print("-" * 50)
-
-        # Train
-        train_loss, train_acc = train_one_epoch(
-            model, train_loader, optimizer, criterion, device
+        train_loader, val_loader = get_loaders(
+            DATA_ROOT, BATCH_SIZE, INPUT_SIZE, VALID_LABELS, LABEL_MAP,
+            TRAIN_SPLIT, RANDOM_SEED, NUM_WORKERS, PIN_MEMORY, PREFETCH_FACTOR
         )
 
-        # Evaluate
+        if train_loader is None or val_loader is None:
+            print("Failed to load dataset. Exiting.")
+            return
+
+        # Initialize model
+        print("\n" + "=" * 70)
+        print("INITIALIZING MODEL")
+        print("=" * 70)
+
+        model = create_model(num_classes=NUM_CLASSES, pretrained=PRETRAINED)
+        model = model.to(device)
+
+        # Print model summary
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"Total Parameters: {total_params:,}")
+        print(f"Trainable Parameters: {trainable_params:,}")
+
+        # Loss function
+        criterion = nn.CrossEntropyLoss()
+
+        # Optimizer
+        optimizer = optim.AdamW(
+            model.parameters(),
+            lr=LEARNING_RATE,
+            weight_decay=WEIGHT_DECAY
+        )
+
+        # Learning rate scheduler
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=NUM_EPOCHS,
+            eta_min=LEARNING_RATE * 0.01
+        )
+
+        # Training loop
+        print("\n" + "=" * 70)
+        print("TRAINING")
+        print("=" * 70)
+
+        start_time = time()
+        best_test_acc = 0.0
+
+        for epoch in range(NUM_EPOCHS):
+            epoch_start = time()
+            current_lr = optimizer.param_groups[0]['lr']
+
+            print(f"\nEpoch {epoch + 1}/{NUM_EPOCHS} (LR: {current_lr:.6f})")
+            print("-" * 50)
+
+            # Train
+            train_loss, train_acc = train_one_epoch(
+                model, train_loader, optimizer, criterion, device
+            )
+
+            # Evaluate
+            acc, prec, rec, f1, cm = evaluate(model, val_loader, device)
+
+            # Step scheduler
+            scheduler.step()
+
+            epoch_time = time() - epoch_start
+
+            # Print epoch summary
+            print(f"\ntrain_loss={train_loss:.4f} | train_acc={train_acc:.4f}")
+            print(f"test_acc={acc:.4f} | precision={prec:.4f} | recall={rec:.4f} | f1={f1:.4f}")
+            print(f"Epoch Time: {epoch_time:.1f}s")
+
+            # Save best model
+            if acc > best_test_acc:
+                best_test_acc = acc
+                torch.save(model.state_dict(), "best_model.pth")
+                print("New best model (by test accuracy)")
+            else:
+                print("No improvement...")
+
+        total_time = time() - start_time
+
+        print(f"\nTotal Training Time: {total_time:.1f} seconds ({total_time/60:.1f} minutes)")
+        print(f"Best test accuracy: {best_test_acc:.4f}")
+
+        # Load best model and evaluate
+        print("\n" + "=" * 70)
+        print("Loading best model for final evaluation...")
+        print("=" * 70)
+        model.load_state_dict(torch.load("best_model.pth", weights_only=True))
+
+        # Run final evaluation on best model
         acc, prec, rec, f1, cm = evaluate(model, val_loader, device)
 
-        # Step scheduler
-        scheduler.step()
+        print("\nBest Model Performance:")
+        print(f"Accuracy:  {acc:.4f}")
+        print(f"Precision: {prec:.4f}")
+        print(f"Recall:    {rec:.4f}")
+        print(f"F1 Score:  {f1:.4f}")
 
-        epoch_time = time() - epoch_start
+        print("\nConfusion Matrix:")
+        print(cm)
+        plot_confusion_matrix(cm, CLASS_NAMES)
 
-        # Print epoch summary
-        print(f"\ntrain_loss={train_loss:.4f} | train_acc={train_acc:.4f}")
-        print(f"test_acc={acc:.4f} | precision={prec:.4f} | recall={rec:.4f} | f1={f1:.4f}")
-        print(f"Epoch Time: {epoch_time:.1f}s")
+        print("\nConfusion matrix saved to: confusion_matrix.png")
+        print("=" * 70)
 
-        # Save best model
-        if acc > best_test_acc:
-            best_test_acc = acc
-            torch.save(model.state_dict(), "best_model.pth")
-            print("New best model (by test accuracy)")
-        else:
-            print("No improvement...")
-
-    total_time = time() - start_time
-
-    print(f"\nTotal Training Time: {total_time:.1f} seconds ({total_time/60:.1f} minutes)")
-    print(f"Best test accuracy: {best_test_acc:.4f}")
-
-    # Load best model and evaluate
-    print("\n" + "=" * 70)
-    print("Loading best model for final evaluation...")
-    print("=" * 70)
-    model.load_state_dict(torch.load("best_model.pth", weights_only=True))
-
-    # Run final evaluation on best model
-    acc, prec, rec, f1, cm = evaluate(model, val_loader, device)
-
-    print("\nBest Model Performance:")
-    print(f"Accuracy:  {acc:.4f}")
-    print(f"Precision: {prec:.4f}")
-    print(f"Recall:    {rec:.4f}")
-    print(f"F1 Score:  {f1:.4f}")
-
-    print("\nConfusion Matrix:")
-    print(cm)
-    plot_confusion_matrix(cm, CLASS_NAMES)
-
-    print("\nConfusion matrix saved to: confusion_matrix.png")
-    print("=" * 70)
+    finally:
+        # Restore stdout and close log file
+        sys.stdout = original_stdout
+        log_file.close()
+        print(f"Training log saved to: training_log.txt")
 
 
 if __name__ == "__main__":
