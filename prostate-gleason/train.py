@@ -1,6 +1,7 @@
 """
 Main training script for Prostate Cancer Gleason Grading
 """
+
 import sys
 import warnings
 from time import time
@@ -8,16 +9,18 @@ from time import time
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
-import torch.nn as nn
 import torch.optim as optim
 
-from config import (BATCH_SIZE, CLASS_NAMES, DATA_ROOT, DEVICE, INPUT_SIZE,
-                   LABEL_MAP, LEARNING_RATE, NON_BLOCKING, NUM_CLASSES,
-                   NUM_EPOCHS, NUM_WORKERS, PIN_MEMORY, PREFETCH_FACTOR,
-                   PRETRAINED, RANDOM_SEED, TRAIN_SPLIT, VALID_LABELS,
-                   WEIGHT_DECAY)
+from config import (BATCH_SIZE, CLASS_COUNTS, CLASS_NAMES, DATA_ROOT, DEVICE,
+                    EFFECTIVE_BETA, FOCAL_GAMMA, INPUT_SIZE, LABEL_MAP,
+                    LEARNING_RATE, NON_BLOCKING, NUM_CLASSES, NUM_EPOCHS,
+                    NUM_WORKERS, PIN_MEMORY, PREFETCH_FACTOR, PRETRAINED,
+                    RANDOM_SEED, TRAIN_SPLIT, USE_WEIGHTED_SAMPLING,
+                    VALID_LABELS, WEIGHT_DECAY, WEIGHTING_STRATEGY,
+                    get_class_weights, print_weight_info)
 from data import get_loaders
 from eval import evaluate
+from losses import get_criterion
 from model import create_model
 
 warnings.filterwarnings("ignore")
@@ -88,8 +91,10 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
         # Progress logging
         if (batch_idx + 1) % log_interval == 0:
             current_acc = 100.0 * total_correct / total_samples
-            print(f"  Batch {batch_idx + 1}/{num_batches} | "
-                  f"Loss: {loss.item():.4f} | Acc: {current_acc:.2f}%")
+            print(
+                f"  Batch {batch_idx + 1}/{num_batches} | "
+                f"Loss: {loss.item():.4f} | Acc: {current_acc:.2f}%"
+            )
 
     avg_loss = total_loss / num_batches
     accuracy = total_correct / total_samples
@@ -100,8 +105,14 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
 def plot_confusion_matrix(cm, class_names):
     """Plot and save confusion matrix."""
     plt.figure(figsize=(10, 8))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
-                xticklabels=class_names, yticklabels=class_names)
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        xticklabels=class_names,
+        yticklabels=class_names,
+    )
     plt.xlabel("Predicted")
     plt.ylabel("Actual")
     plt.title("Confusion Matrix - Prostate Gleason Grading")
@@ -140,14 +151,27 @@ def main():
         print(f"  Pretrained: {PRETRAINED}")
         print(f"  Valid Labels: {VALID_LABELS}")
 
+        # Print class weighting info
+        print_weight_info()
+
         # Load data
         print("\n" + "=" * 70)
         print("LOADING DATASET")
         print("=" * 70)
 
         train_loader, val_loader = get_loaders(
-            DATA_ROOT, BATCH_SIZE, INPUT_SIZE, VALID_LABELS, LABEL_MAP,
-            TRAIN_SPLIT, RANDOM_SEED, NUM_WORKERS, PIN_MEMORY, PREFETCH_FACTOR
+            DATA_ROOT,
+            BATCH_SIZE,
+            INPUT_SIZE,
+            VALID_LABELS,
+            LABEL_MAP,
+            TRAIN_SPLIT,
+            RANDOM_SEED,
+            NUM_WORKERS,
+            PIN_MEMORY,
+            PREFETCH_FACTOR,
+            use_weighted_sampling=USE_WEIGHTED_SAMPLING,
+            num_classes=NUM_CLASSES,
         )
 
         if train_loader is None or val_loader is None:
@@ -168,20 +192,41 @@ def main():
         print(f"Total Parameters: {total_params:,}")
         print(f"Trainable Parameters: {trainable_params:,}")
 
-        # Loss function
-        criterion = nn.CrossEntropyLoss()
+        # Get class weights
+        class_weights = get_class_weights()
+
+        # Loss function with class weighting
+        print("\n" + "=" * 70)
+        print("LOSS FUNCTION")
+        print("=" * 70)
+        print(f"Strategy: {WEIGHTING_STRATEGY}")
+
+        criterion = get_criterion(
+            strategy=WEIGHTING_STRATEGY,
+            class_weights=class_weights,
+            class_counts=CLASS_COUNTS,
+            num_classes=NUM_CLASSES,
+            focal_gamma=FOCAL_GAMMA,
+            effective_beta=EFFECTIVE_BETA,
+        )
+
+        # Move criterion to device (for FocalLoss buffers)
+        criterion = criterion.to(device)
+
+        if class_weights is not None:
+            print(f"Class weights: {class_weights}")
 
         # Optimizer
         optimizer = optim.AdamW(
-            model.parameters(),
-            lr=LEARNING_RATE,
+            model.parameters(), 
+            lr=LEARNING_RATE, 
             weight_decay=WEIGHT_DECAY
         )
 
         # Learning rate scheduler
         scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=NUM_EPOCHS,
+            optimizer, 
+            T_max=NUM_EPOCHS, 
             eta_min=LEARNING_RATE * 0.01
         )
 
@@ -192,10 +237,11 @@ def main():
 
         start_time = time()
         best_test_acc = 0.0
+        best_f1 = 0.0
 
         for epoch in range(NUM_EPOCHS):
             epoch_start = time()
-            current_lr = optimizer.param_groups[0]['lr']
+            current_lr = optimizer.param_groups[0]["lr"]
 
             print(f"\nEpoch {epoch + 1}/{NUM_EPOCHS} (LR: {current_lr:.6f})")
             print("-" * 50)
@@ -218,9 +264,12 @@ def main():
             print(f"test_acc={acc:.4f} | precision={prec:.4f} | recall={rec:.4f} | f1={f1:.4f}")
             print(f"Epoch Time: {epoch_time:.1f}s")
 
-            # Save best model
+            # Save best model (can use F1 or accuracy)
+            # Using accuracy for consistency with original, but F1 may be better
+            # for imbalanced data
             if acc > best_test_acc:
                 best_test_acc = acc
+                best_f1 = f1
                 torch.save(model.state_dict(), "best_model.pth")
                 print("New best model (by test accuracy)")
             else:
@@ -230,6 +279,7 @@ def main():
 
         print(f"\nTotal Training Time: {total_time:.1f} seconds ({total_time/60:.1f} minutes)")
         print(f"Best test accuracy: {best_test_acc:.4f}")
+        print(f"Best F1 score: {best_f1:.4f}")
 
         # Load best model and evaluate
         print("\n" + "=" * 70)
@@ -248,6 +298,15 @@ def main():
 
         print("\nConfusion Matrix:")
         print(cm)
+
+        # Per-class metrics
+        print("\nPer-Class Performance:")
+        for i, name in enumerate(CLASS_NAMES):
+            class_total = cm[i].sum()
+            class_correct = cm[i, i]
+            class_acc = class_correct / class_total if class_total > 0 else 0
+            print(f"  {name}: {class_correct}/{class_total} ({100*class_acc:.1f}%)")
+
         plot_confusion_matrix(cm, CLASS_NAMES)
 
         print("\nConfusion matrix saved to: confusion_matrix.png")
@@ -257,7 +316,7 @@ def main():
         # Restore stdout and close log file
         sys.stdout = original_stdout
         log_file.close()
-        print(f"Training log saved to: training_log.txt")
+        print("Training log saved to: training_log.txt")
 
 
 if __name__ == "__main__":

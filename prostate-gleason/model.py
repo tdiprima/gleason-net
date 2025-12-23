@@ -1,6 +1,7 @@
 """
 ResNet50 model for Prostate Cancer Gleason Grading
 """
+
 import torch.nn as nn
 from torchvision import models
 
@@ -27,7 +28,7 @@ def create_model(num_classes, pretrained=True):
     # Replace the final fully connected layer
     num_features = model.fc.in_features
     model.fc = nn.Sequential(
-        nn.Dropout(p=0.5),
+        nn.Dropout(p=0.5), 
         nn.Linear(num_features, num_classes)
     )
 
