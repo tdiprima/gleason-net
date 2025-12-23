@@ -53,7 +53,7 @@ CLASS_COUNTS = np.array([19695, 26816, 8461, 815], dtype=np.float32)
 #   "inverse_sqrt"      - Square root of inverse frequency (softer)
 #   "effective"         - Effective number of samples (Class-Balanced Loss paper)
 #   "focal"             - Use Focal Loss instead of CrossEntropy
-WEIGHTING_STRATEGY = "effective"  # <-- Change this to switch strategies
+WEIGHTING_STRATEGY = "inverse_sqrt"  # <-- Change this to switch strategies
 
 # For "effective" strategy: beta parameter (0.9, 0.99, 0.999, 0.9999 are common)
 # Higher beta = more aggressive weighting toward minority classes
