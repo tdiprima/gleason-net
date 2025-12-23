@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 from PIL import Image
-from torch.utils.data import (DataLoader, Dataset)
+from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision import transforms
 
 
