@@ -4,10 +4,9 @@ Dataset and data loading for Prostate Cancer Gleason Grading
 
 from pathlib import Path
 
-import numpy as np
 import torch
 from PIL import Image
-from torch.utils.data import (DataLoader, Dataset, WeightedRandomSampler)
+from torch.utils.data import (DataLoader, Dataset)
 from torchvision import transforms
 
 
@@ -84,10 +83,6 @@ class ProstatePathologyDataset(Dataset):
         print(f"Skipped label 4 (Gleason 5-Secretions): {self.skipped_labels[4]}")
         print(f"Skipped label 5 (Gleason 5): {self.skipped_labels[5]}")
 
-    def get_labels(self):
-        """Return all labels for computing sample weights."""
-        return [label for _, label in self.samples]
-
     def __len__(self):
         return len(self.samples)
 
@@ -119,21 +114,6 @@ class ProstatePathologyDataset(Dataset):
                 return Image.new("RGB", (250, 250), (0, 0, 0)), label
 
 
-class SubsetWithLabels(torch.utils.data.Subset):
-    """
-    A Subset that exposes labels for WeightedRandomSampler.
-    """
-
-    def get_labels(self):
-        """Return labels for the subset indices."""
-        if hasattr(self.dataset, "get_labels"):
-            all_labels = self.dataset.get_labels()
-            return [all_labels[i] for i in self.indices]
-        else:
-            # Fallback: iterate through subset
-            return [self.dataset[i][1] for i in self.indices]
-
-
 def custom_collate_fn(batch):
     """Custom collate function to filter out None values from corrupted images."""
     batch = [(img, label) for img, label in batch if img is not None]
@@ -144,102 +124,41 @@ def custom_collate_fn(batch):
 
 def get_train_transforms(input_size):
     """Training transforms with augmentation for pathology images."""
-    return transforms.Compose(
-        [
-            transforms.Resize((input_size, input_size)),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomVerticalFlip(p=0.5),
-            transforms.RandomRotation(degrees=90),
-            transforms.ColorJitter(
-                brightness=0.2, contrast=0.2, saturation=0.1, hue=0.05
-            ),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406],  # ImageNet normalization
-                std=[0.229, 0.224, 0.225],
-            ),
-        ]
-    )
+    return transforms.Compose([
+        transforms.Resize((input_size, input_size)),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomVerticalFlip(p=0.5),
+        transforms.RandomRotation(degrees=90),
+        transforms.ColorJitter(
+            brightness=0.2,
+            contrast=0.2,
+            saturation=0.1,
+            hue=0.05
+        ),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],  # ImageNet normalization
+            std=[0.229, 0.224, 0.225]
+        ),
+    ])
 
 
 def get_val_transforms(input_size):
     """Validation transforms (no augmentation)."""
-    return transforms.Compose(
-        [
-            transforms.Resize((input_size, input_size)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
-    )
+    return transforms.Compose([
+        transforms.Resize((input_size, input_size)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        ),
+    ])
 
 
-def create_weighted_sampler(dataset, num_classes):
-    """
-    Create a WeightedRandomSampler for balanced class sampling.
-
-    Args:
-        dataset: Dataset or Subset with get_labels() method
-        num_classes: Number of classes
-
-    Returns:
-        WeightedRandomSampler instance
-    """
-    labels = dataset.get_labels()
-
-    # Count samples per class
-    class_counts = np.bincount(labels, minlength=num_classes)
-
-    # Compute weight for each class (inverse frequency)
-    class_weights = 1.0 / (class_counts + 1e-6)  # avoid division by zero
-
-    # Assign weight to each sample based on its class
-    sample_weights = np.array([class_weights[label] for label in labels])
-    sample_weights = torch.from_numpy(sample_weights).float()
-
-    # Create sampler
-    sampler = WeightedRandomSampler(
-        weights=sample_weights,
-        num_samples=len(dataset),
-        replacement=True,  # Allow oversampling
-    )
-
-    print("\nWeighted Sampler Class Weights:")
-    for i, (count, weight) in enumerate(zip(class_counts, class_weights)):
-        print(f"  Class {i}: {count:,} samples, weight={weight:.6f}")
-
-    return sampler
-
-
-def get_loaders(
-    data_root,
-    batch_size,
-    input_size,
-    valid_labels,
-    label_map,
-    train_split,
-    random_seed,
-    num_workers,
-    pin_memory,
-    prefetch_factor,
-    use_weighted_sampling=False,
-    num_classes=4,
-):
+def get_loaders(data_root, batch_size, input_size, valid_labels, label_map,
+                train_split, random_seed, num_workers, pin_memory, prefetch_factor):
     """
     Create train and validation data loaders.
-
-    Args:
-        data_root: Path to dataset
-        batch_size: Batch size
-        input_size: Input image size
-        valid_labels: Set of valid labels to use
-        label_map: Mapping from original to training labels
-        train_split: Fraction for training
-        random_seed: Random seed for reproducibility
-        num_workers: Number of data loading workers
-        pin_memory: Pin memory for faster GPU transfer
-        prefetch_factor: Prefetch factor for DataLoader
-        use_weighted_sampling: Whether to use weighted random sampling
-        num_classes: Number of classes (for weighted sampling)
 
     Returns:
         train_loader, val_loader
@@ -254,23 +173,18 @@ def get_loaders(
 
     if len(full_dataset) == 0:
         print("ERROR: No valid samples found in dataset!")
-        print(
-            f"Please check that {data_root} exists and contains properly named images."
-        )
+        print(f"Please check that {data_root} exists and contains properly named images.")
         return None, None
 
     # Split into train and validation
     train_size = int(train_split * len(full_dataset))
-    len(full_dataset) - train_size
+    val_size = len(full_dataset) - train_size
 
-    # Get indices for split
-    generator = torch.Generator().manual_seed(random_seed)
-    indices = torch.randperm(len(full_dataset), generator=generator).tolist()
-    train_indices = indices[:train_size]
-    val_indices = indices[train_size:]
-
-    # Create subsets with label access for weighted sampling
-    train_dataset = SubsetWithLabels(full_dataset, train_indices)
+    train_dataset, _ = random_split(
+        full_dataset,
+        [train_size, val_size],
+        generator=torch.Generator().manual_seed(random_seed)
+    )
 
     # Create a separate dataset for validation with proper transforms
     val_dataset_proper = ProstatePathologyDataset(
@@ -279,26 +193,20 @@ def get_loaders(
         valid_labels=valid_labels,
         label_map=label_map,
     )
-    val_dataset_proper = SubsetWithLabels(val_dataset_proper, val_indices)
+
+    # Get the same indices for validation
+    val_indices = list(range(train_size, len(full_dataset)))
+    val_dataset_proper = torch.utils.data.Subset(val_dataset_proper, val_indices)
 
     print("\nDataset Split:")
     print(f"  Training samples: {len(train_dataset)}")
     print(f"  Validation samples: {len(val_dataset_proper)}")
 
-    # Create weighted sampler if requested
-    train_sampler = None
-    shuffle_train = True
-
-    if use_weighted_sampling:
-        train_sampler = create_weighted_sampler(train_dataset, num_classes)
-        shuffle_train = False  # Cannot shuffle with sampler
-
     # Create data loaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
-        shuffle=shuffle_train if train_sampler is None else False,
-        sampler=train_sampler,
+        shuffle=True,
         pin_memory=pin_memory,
         num_workers=num_workers,
         prefetch_factor=prefetch_factor if num_workers > 0 else None,

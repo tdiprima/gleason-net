@@ -9,7 +9,6 @@ from time import time
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
-import torch.nn as nn
 import torch.optim as optim
 
 from config import (BATCH_SIZE, CLASS_COUNTS, CLASS_NAMES, DATA_ROOT, DEVICE,
