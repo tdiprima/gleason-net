@@ -15,9 +15,8 @@ from config import (BATCH_SIZE, CLASS_COUNTS, CLASS_NAMES, DATA_ROOT, DEVICE,
                     EFFECTIVE_BETA, FOCAL_GAMMA, INPUT_SIZE, LABEL_MAP,
                     LEARNING_RATE, NON_BLOCKING, NUM_CLASSES, NUM_EPOCHS,
                     NUM_WORKERS, PIN_MEMORY, PREFETCH_FACTOR, PRETRAINED,
-                    RANDOM_SEED, TRAIN_SPLIT, USE_WEIGHTED_SAMPLING,
-                    VALID_LABELS, WEIGHT_DECAY, WEIGHTING_STRATEGY,
-                    EARLY_STOPPING, EARLY_STOPPING_PATIENCE,
+                    RANDOM_SEED, TRAIN_SPLIT, VALID_LABELS, WEIGHT_DECAY,
+                    WEIGHTING_STRATEGY, EARLY_STOPPING, EARLY_STOPPING_PATIENCE,
                     EARLY_STOPPING_MIN_DELTA, EARLY_STOPPING_METRIC,
                     get_class_weights, print_weight_info)
 from data import get_loaders
@@ -93,10 +92,8 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
         # Progress logging
         if (batch_idx + 1) % log_interval == 0:
             current_acc = 100.0 * total_correct / total_samples
-            print(
-                f"  Batch {batch_idx + 1}/{num_batches} | "
-                f"Loss: {loss.item():.4f} | Acc: {current_acc:.2f}%"
-            )
+            print(f"  Batch {batch_idx + 1}/{num_batches} | "
+                  f"Loss: {loss.item():.4f} | Acc: {current_acc:.2f}%")
 
     avg_loss = total_loss / num_batches
     accuracy = total_correct / total_samples
@@ -220,8 +217,6 @@ def main():
             NUM_WORKERS,
             PIN_MEMORY,
             PREFETCH_FACTOR,
-            use_weighted_sampling=USE_WEIGHTED_SAMPLING,
-            num_classes=NUM_CLASSES,
         )
 
         if train_loader is None or val_loader is None:
@@ -268,15 +263,15 @@ def main():
 
         # Optimizer
         optimizer = optim.AdamW(
-            model.parameters(), 
-            lr=LEARNING_RATE, 
+            model.parameters(),
+            lr=LEARNING_RATE,
             weight_decay=WEIGHT_DECAY
         )
 
         # Learning rate scheduler
         scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, 
-            T_max=NUM_EPOCHS, 
+            optimizer,
+            T_max=NUM_EPOCHS,
             eta_min=LEARNING_RATE * 0.01
         )
 
