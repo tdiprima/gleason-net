@@ -16,7 +16,7 @@ PRETRAINED = True  # Use ImageNet pretrained weights
 BATCH_SIZE = 64
 LEARNING_RATE = 0.0001  # Lower LR for fine-tuning pretrained model
 WEIGHT_DECAY = 1e-4
-NUM_EPOCHS = 25
+NUM_EPOCHS = 45
 
 # Data loading optimization (72 cores available)
 NUM_WORKERS = 16  # Good balance for 72 cores with GPU training
@@ -53,7 +53,7 @@ CLASS_COUNTS = np.array([19695, 26816, 8461, 815], dtype=np.float32)
 #   "inverse_sqrt"      - Square root of inverse frequency (softer)
 #   "effective"         - Effective number of samples (Class-Balanced Loss paper)
 #   "focal"             - Use Focal Loss instead of CrossEntropy
-WEIGHTING_STRATEGY = "none"  # <-- Change this to switch strategies
+WEIGHTING_STRATEGY = "inverse_sqrt"  # <-- Change this to switch strategies
 
 # For "effective" strategy: beta parameter (0.9, 0.99, 0.999, 0.9999 are common)
 # Higher beta = more aggressive weighting toward minority classes
@@ -85,7 +85,7 @@ EARLY_STOPPING_PATIENCE = 5
 EARLY_STOPPING_MIN_DELTA = 0.0001
 
 # Metric to monitor: "accuracy", "f1", "loss"
-EARLY_STOPPING_METRIC = "accuracy"
+EARLY_STOPPING_METRIC = "loss"
 
 
 def compute_class_weights(strategy, class_counts, beta=0.999):
